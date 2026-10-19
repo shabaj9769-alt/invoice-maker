@@ -1,11 +1,26 @@
-# Sample Snack app
+# Invoice Maker
 
-Open the `App.js` file to start writing some code. You can preview the changes directly on your phone or tablet by scanning the **QR code** or use the iOS or Android emulators. When you're done, click **Save** and share the link!
+Offline invoice, quotation and credit-note app (Expo / React Native) with GST support, UPI QR codes, customers, items and stock.
+All data is stored on the device. There is no server.
 
-When you're ready to see everything that Expo provides (or if you want to use your own editor) you can **Download** your project and use it with [expo cli](https://docs.expo.dev/get-started/installation/#expo-cli)).
+## Setup
 
-All projects created in Snack are publicly available, so you can easily share the link to this project via link, or embed it on a web page with the `<>` button.
+```bash
+npm install
+npx expo install expo-secure-store expo-crypto   # aligns versions with your Expo SDK
+npx expo start
+```
 
-If you're having problems, you can tweet to us [@expo](https://twitter.com/expo) or ask in our [forums](https://forums.expo.dev/c/expo-dev-tools/61) or [Discord](https://chat.expo.dev/).
+`expo-secure-store` and `expo-crypto` are native modules: make a new EAS build (`eas build`) after updating.
 
-Snack is Open Source. You can find the code on the [GitHub repo](https://github.com/expo/snack).
+## Security notes
+
+- The PIN is salted and hashed in the device keystore (`expo-secure-store`), never in AsyncStorage or backups. Wrong attempts trigger a growing lockout, and the app re-locks after a minute in the background.
+- Backups are plain text. The Restore screen validates and sanitises every field and asks for confirmation before changing UPI or bank details.
+- UPI IDs are validated before a QR code or link is built. Printed bills use a strict Content-Security-Policy.
+- Android auto-backup is disabled (`allowBackup: false`) so app data is not copied to cloud or adb backups.
+
+## Legal
+
+See [TERMS.md](./TERMS.md). The same text is shown in the app (More > Terms & Conditions) and must be accepted on first launch.
+Edit `terms.js`, fill in the two `[bracketed]` placeholders, bump `TERMS_VERSION` when the text changes, and regenerate `TERMS.md`.

@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Linking, Share, Modal, Keyboard,
-  useColorScheme, Platform, KeyboardAvoidingView, Switch, Alert, BackHandler, Dimensions,
+  useColorScheme, Platform, KeyboardAvoidingView, Switch, Alert, BackHandler, Dimensions, AppState,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import Constants from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
+import { TERMS, TERMS_VERSION, TERMS_UPDATED } from './terms';
 import qrcode from 'qrcode-generator';
 import QRCode from 'react-native-qrcode-svg';
 import { captureRef } from 'react-native-view-shot';
@@ -29,8 +32,111 @@ const inr = (n, dec) => {
   return (neg ? '-' : '') + '₹' + g + (dec ? '.' + f : '');
 };
 const money = (n) => { const v = r2(n); return inr(v, v % 1 !== 0); };
-const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-const csvQ = (v) => { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+// CSV: quote fields, and neutralise spreadsheet formulas (=, +, -, @) in text so Excel/Sheets never runs them
+const csvQ = (v) => {
+  v = String(v == null ? '' : v);
+  if (/^[=+\-@\t\r]/.test(v) && !/^[+-]?\d+(\.\d+)?$/.test(v)) v = "'" + v;
+  return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+};
+
+/* ---- validation helpers ---- */
+const UPI_RE = /^[\w.\-]{2,}@[A-Za-z][\w.\-]{1,}$/;
+const upiOk = (cfg) => !!cfg && typeof cfg.upi === 'string' && cfg.upi.trim().length <= 100 && UPI_RE.test(cfg.upi.trim());
+const safeAccent = (a) => (ACCENTS.includes(a) ? a : ACCENTS[0]);
+const waLink = (phone, text) => {
+  let ph = String(phone || '').replace(/\D/g, '');
+  if (ph.length === 10) ph = '91' + ph;
+  if (ph.length < 11 || ph.length > 15) return null;
+  return 'https://wa.me/' + ph + '?text=' + encodeURIComponent(text);
+};
+const sendWa = (phone, text) => {
+  const fb = () => { Share.share({ message: text }).catch(() => {}); };
+  const u = waLink(phone, text);
+  if (!u) { fb(); return; }
+  Linking.openURL(u).catch(fb);
+};
+
+/* ---- PIN: stored hashed + salted in the device keystore (never in AsyncStorage, never in backups) ---- */
+const PIN_KEY = 'inv_pin_v1';
+const secGet = async () => {
+  try { const v = await SecureStore.getItemAsync(PIN_KEY); return v ? JSON.parse(v) : null; } catch (e) { return { err: true }; }
+};
+const secSet = (o) => SecureStore.setItemAsync(PIN_KEY, JSON.stringify(o), { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+const hashPin = (pin, salt) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, salt + ':' + pin);
+const newSalt = () => Array.from(Crypto.getRandomBytes(16)).map((x) => x.toString(16).padStart(2, '0')).join('');
+const sameStr = (a, b) => { if (a.length !== b.length) return false; let r = 0; for (let k = 0; k < a.length; k++) r |= a.charCodeAt(k) ^ b.charCodeAt(k); return r === 0; };
+const savePin = async (pin) => { const salt = newSalt(); await secSet({ salt, hash: await hashPin(pin, salt), len: pin.length, fails: 0, until: 0 }); };
+const removePin = async () => { try { await SecureStore.deleteItemAsync(PIN_KEY); } catch (e) { /* ignore */ } };
+const weakPin = (p) => /^(\d)\1+$/.test(p) || '0123456789'.includes(p) || '9876543210'.includes(p);
+// Verifies a PIN. After 5 wrong tries the app makes you wait 30s, doubling each time up to 15 minutes.
+const checkPin = async (pin) => {
+  const s = await secGet();
+  if (!s || s.err) return { ok: false, err: true };
+  const now = Date.now();
+  if (s.until && s.until > now) return { ok: false, wait: Math.ceil((s.until - now) / 1000) };
+  if (sameStr(await hashPin(pin, s.salt), s.hash)) { if (s.fails || s.until) await secSet({ ...s, fails: 0, until: 0 }); return { ok: true }; }
+  const fails = (s.fails || 0) + 1;
+  const wait = fails >= 5 ? Math.min(30 * Math.pow(2, fails - 5), 900) : 0;
+  await secSet({ ...s, fails, until: wait ? now + wait * 1000 : 0 });
+  return { ok: false, wait, left: wait ? 0 : 5 - fails };
+};
+
+/* ---- backup sanitiser: whitelist fields, force types, cap sizes. Nothing from a pasted backup is trusted. ---- */
+const MAX_BACKUP = 5000000, MAX_ROWS = 10000;
+const S = (v, n = 200) => (typeof v === 'string' || typeof v === 'number' ? String(v).slice(0, n) : '');
+const N = (v) => { const x = +v; return Number.isFinite(x) ? Math.max(-1e12, Math.min(1e12, x)) : 0; };
+const NSb = (v) => (v === '' || v == null ? '' : String(N(v)));
+const D = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+const arr = (a, n) => (Array.isArray(a) ? a.slice(0, n) : []);
+const obj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+const cleanCust = (x) => {
+  if (!obj(x)) return null;
+  const id = S(x.id, 40); if (!id) return null;
+  return { id, name: S(x.name, 100), phone: S(x.phone, 20), addr: S(x.addr, 500), gstin: S(x.gstin, 15) };
+};
+const cleanProd = (x) => {
+  if (!obj(x)) return null;
+  const id = S(x.id, 40); if (!id) return null;
+  return { id, name: S(x.name, 100), rate: NSb(x.rate), unit: S(x.unit, 20), hsn: S(x.hsn, 20), gst: NSb(x.gst), track: !!x.track, stock: NSb(x.stock), low: NSb(x.low) };
+};
+const cleanBill = (x) => {
+  if (!obj(x)) return null;
+  const id = S(x.id, 40); if (!id) return null;
+  return {
+    id, type: ['invoice', 'quote', 'cn'].includes(x.type) ? x.type : 'invoice', no: S(x.no, 40), dt: D(x.dt) || today(), due: D(x.due),
+    cid: S(x.cid, 40), cust: S(x.cust, 100), cph: S(x.cph, 20), caddr: S(x.caddr, 500), cgstin: S(x.cgstin, 15), supply: S(x.supply, 40),
+    items: arr(x.items, 200).filter(obj).map((it) => ({ n: S(it.n, 200), q: NSb(it.q), r: NSb(it.r), u: S(it.u, 20), hsn: S(it.hsn, 20), g: NSb(it.g), pid: S(it.pid, 40) })),
+    dis: NSb(x.dis), disT: x.disT === '%' ? '%' : '₹', notes: S(x.notes, 1000),
+    payments: arr(x.payments, 200).filter(obj).map((p) => ({ amt: N(p.amt), dt: D(p.dt) || today(), mode: MODES.includes(p.mode) ? p.mode : 'Cash' })),
+    gst: !!x.gst, rnd: !!x.rnd, inter: !!x.inter,
+  };
+};
+const CFG_TXT = { name: 100, phone: 20, addr: 500, gstin: 15, btype: 100, prefix: 10, email: 100, bankName: 100, bankAcc: 30, ifsc: 15, terms: 2000, sign: 60 };
+const cleanCfg = (c) => {
+  const o = {};
+  if (!obj(c)) return o;
+  Object.keys(CFG_TXT).forEach((k) => { if (k in c) o[k] = S(c[k], CFG_TXT[k]); });
+  ['gstOn', 'round'].forEach((k) => { if (k in c) o[k] = !!c[k]; });
+  if ('accent' in c) o.accent = safeAccent(c.accent);
+  if ('defGst' in c) o.defGst = NSb(c.defGst);
+  if (typeof c.upi === 'string' && c.upi.trim().length <= 100 && UPI_RE.test(c.upi.trim())) o.upi = c.upi.trim();
+  return o; // 'pin' is never accepted from a backup
+};
+const parseBackup = (txt) => {
+  try {
+    if (typeof txt !== 'string' || txt.length > MAX_BACKUP) return null;
+    let d = JSON.parse(txt);
+    if (obj(d) && Array.isArray(d.hist)) { const m = migrateOld(obj(d.cfg) ? d.cfg : {}, d.hist); d = { cfg: m.cfg, bills: m.bills, custs: [], prods: [] }; }
+    if (!obj(d) || !Array.isArray(d.bills)) return null;
+    return {
+      cfg: cleanCfg(d.cfg),
+      bills: arr(d.bills, MAX_ROWS).map(cleanBill).filter(Boolean),
+      custs: arr(d.custs, MAX_ROWS).map(cleanCust).filter(Boolean),
+      prods: arr(d.prods, MAX_ROWS).map(cleanProd).filter(Boolean),
+    };
+  } catch (e) { return null; }
+};
 const qtyTxt = (l) => (+l.q || 0) + (l.u ? ' ' + l.u : '');
 
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
@@ -134,7 +240,11 @@ const migrateOld = (oc = {}, oh = []) => {
 
 /* ---- documents ---- */
 const docTitle = (b) => (b.type === 'quote' ? 'QUOTATION' : b.type === 'cn' ? 'CREDIT NOTE' : b.gst ? 'TAX INVOICE' : 'INVOICE');
-const upiLink = (cfg, b, amt) => 'upi://pay?pa=' + cfg.upi.trim() + '&pn=' + encodeURIComponent((cfg.name || 'Shop').slice(0, 25)) + '&am=' + amt.toFixed(2) + '&cu=INR';
+const upiLink = (cfg, b, amt) => {
+  const pa = String(cfg.upi || '').trim(), a = +amt;
+  if (!UPI_RE.test(pa) || pa.length > 100 || !Number.isFinite(a) || a <= 0) return '';
+  return 'upi://pay?pa=' + encodeURIComponent(pa).replace(/%40/g, '@') + '&pn=' + encodeURIComponent((cfg.name || 'Shop').slice(0, 25)) + '&am=' + a.toFixed(2) + '&cu=INR';
+};
 
 const billText = (b, cfg) => {
   const i = info(b), c = i.c, L = [];
@@ -160,7 +270,7 @@ const reminderText = (name, no, bal, cfg) =>
   'Namaste ' + (name || '') + ',\n' + (cfg.name || 'Shop') + ' ki taraf se yaad dilana tha ki ' + (no ? 'bill ' + no + ' ka ' : '') + money(bal) + ' baaki hai. Kripya jaldi payment kar dein.' + (cfg.upi ? '\nUPI: ' + cfg.upi : '') + '\nDhanyavaad 🙏';
 
 const billHtml = (b, cfg) => {
-  const acc = cfg.accent || ACCENTS[0];
+  const acc = safeAccent(cfg.accent);
   const i = info(b), c = i.c, g = b.gst;
   const rows = c.lines.filter((l) => l.n).map((l, k) =>
     '<tr><td>' + (k + 1) + '</td><td>' + esc(l.n) + (g && l.hsn ? '<div class="s">HSN: ' + esc(l.hsn) + '</div>' : '') + '</td><td class="r">' + esc(qtyTxt(l)) + '</td><td class="r">' + inr(+l.r || 0, 1) + '</td>' + (g ? '<td class="r">' + l.gr + '%</td>' : '') + '<td class="r">' + inr(l.amt, 1) + '</td></tr>').join('');
@@ -169,13 +279,13 @@ const billHtml = (b, cfg) => {
     return '<tr><td>' + k + '%</td><td class="r">' + inr(s.tv, 1) + '</td>' + (c.inter ? '<td class="r">' + inr(s.tx, 1) + '</td>' : '<td class="r">' + inr(s.tx / 2, 1) + '</td><td class="r">' + inr(s.tx / 2, 1) + '</td>') + '</tr>';
   }).join('');
   let qr = '';
-  if (cfg.upi && cfg.upi.trim() && i.bal > 0) {
+  if (upiOk(cfg) && i.bal > 0) {
     try { const q = qrcode(0, 'M'); q.addData(upiLink(cfg, b, i.bal)); q.make(); qr = '<div class="qr">' + q.createSvgTag(4, 16) + '<div class="s">Scan to pay ' + inr(i.bal, 1) + '</div></div>'; } catch (e) { qr = ''; }
   }
   const tr = (l, v, cls) => '<div class="t ' + (cls || '') + '"><span>' + l + '</span><span>' + v + '</span></div>';
   const head = [cfg.btype, cfg.addr, cfg.phone && 'Ph: ' + cfg.phone, cfg.email, g && cfg.gstin && 'GSTIN: ' + cfg.gstin].filter(Boolean).map(esc).join('<br>');
   const bank = [cfg.bankName && 'Bank: ' + cfg.bankName, cfg.bankAcc && 'A/c No: ' + cfg.bankAcc, cfg.ifsc && 'IFSC: ' + cfg.ifsc, cfg.upi && 'UPI: ' + cfg.upi].filter(Boolean).map(esc).join('<br>');
-  return '<html><head><meta name="viewport" content="width=device-width"><style>' +
+  return '<html><head><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:"><meta name="viewport" content="width=device-width"><style>' +
     '*{box-sizing:border-box}body{font-family:Helvetica,Arial,sans-serif;color:#17211c;font-size:12px;margin:0;padding:24px}' +
     '.top{border-top:8px solid ' + acc + ';padding-top:14px;display:flex;justify-content:space-between;align-items:flex-start}' +
     'h1{margin:0;font-size:22px;color:' + acc + '}.doc{font-size:18px;font-weight:bold;color:' + acc + ';text-align:right}.s{font-size:10px;color:#5e6b65}' +
@@ -192,7 +302,7 @@ const billHtml = (b, cfg) => {
     '<div class="top"><div><h1>' + esc(cfg.name || 'Shop') + '</h1><div class="s">' + head + '</div></div><div><div class="doc">' + docTitle(b) + '</div>' +
     (i.status === 'Paid' ? '<div style="text-align:right;margin-top:6px"><span class="paid">PAID</span></div>' : '') + '</div></div>' +
     '<div class="meta"><div class="box"><div class="lb">Billed to</div><b>' + esc(b.cust || 'Walk-in customer') + '</b><br>' + [b.cph && 'Ph: ' + b.cph, b.caddr, g && b.cgstin && 'GSTIN: ' + b.cgstin].filter(Boolean).map(esc).join('<br>') + '</div>' +
-    '<div class="box"><div class="lb">Details</div>No: <b>' + esc(b.no) + '</b><br>Date: ' + fmtD(b.dt) + (b.due ? '<br>Due: ' + fmtD(b.due) : '') + (g ? '<br>Supply: ' + (c.inter ? 'Inter-state' : 'Intra-state') : '') + '</div></div>' +
+    '<div class="box"><div class="lb">Details</div>No: <b>' + esc(b.no) + '</b><br>Date: ' + esc(fmtD(b.dt)) + (b.due ? '<br>Due: ' + esc(fmtD(b.due)) : '') + (g ? '<br>Supply: ' + (c.inter ? 'Inter-state' : 'Intra-state') : '') + '</div></div>' +
     '<table><tr><th>#</th><th>Item</th><th class="r">Qty</th><th class="r">Rate</th>' + (g ? '<th class="r">GST</th>' : '') + '<th class="r">Amount</th></tr>' + rows + '</table>' +
     '<div class="tot">' + tr('Subtotal', inr(c.sub, 1)) + (c.disc > 0 ? tr('Discount', '-' + inr(c.disc, 1)) : '') +
     (g ? tr('Taxable value', inr(c.taxable, 1)) + (c.inter ? tr('IGST', inr(c.igst, 1)) : tr('CGST', inr(c.cgst, 1)) + tr('SGST', inr(c.sgst, 1))) : '') +
@@ -419,11 +529,11 @@ function ProfileForm({ first, onDone }) {
 /* Clean bill used for the photo that goes to WhatsApp (always light colours) */
 function SnapBill({ b }) {
   const { cfg } = useX();
-  const acc = cfg.accent || ACCENTS[0];
+  const acc = safeAccent(cfg.accent);
   const ink = '#17211c', mute = '#5e6b65', line = '#dde2de';
   const i = info(b), c = i.c, g = b.gst;
   const rows = c.lines.filter((l) => l.n);
-  const qr = cfg.upi && cfg.upi.trim() && i.bal > 0.005 ? upiLink(cfg, b, i.bal) : '';
+  const qr = upiOk(cfg) && i.bal > 0.005 ? upiLink(cfg, b, i.bal) : '';
   const head = [cfg.btype, cfg.addr, cfg.phone && 'Ph: ' + cfg.phone, g && cfg.gstin && 'GSTIN: ' + cfg.gstin].filter(Boolean).join(' | ');
   const bank = [cfg.bankName && 'Bank: ' + cfg.bankName, cfg.bankAcc && 'A/c: ' + cfg.bankAcc, cfg.ifsc && 'IFSC: ' + cfg.ifsc].filter(Boolean).join('\n');
   const T = ({ a, v, big, col }) => (
@@ -544,8 +654,7 @@ function Editor({ draft, onClose }) {
   const doWa = async () => { const b = persist(); if (b) await shareImage(b); };
   const doText = () => {
     const b = persist(); if (!b) return;
-    let ph = (b.cph || '').replace(/\D/g, ''); if (ph.length === 10) ph = '91' + ph;
-    Linking.openURL('https://wa.me/' + ph + '?text=' + encodeURIComponent(billText(b, cfg))).catch(() => Share.share({ message: billText(b, cfg) }));
+    sendWa(b.cph, billText(b, cfg));
   };
   const back = () => Alert.alert('Bina save kiye bahar jayein?', 'Aapke badlav save nahi honge.', [{ text: 'Ruko', style: 'cancel' }, { text: 'Bahar jao', style: 'destructive', onPress: onClose }]);
   useEffect(() => {
@@ -644,7 +753,7 @@ function Editor({ draft, onClose }) {
             <Text style={{ color: i.total - i.paid - recv > 0.005 ? C.red : C.ok, fontWeight: '700' }}>
               Baaki: {money(Math.max(0, r2(i.total - i.paid - recv)))}
             </Text>
-            {!!(cfg.upi && cfg.upi.trim()) && i.total - i.paid - recv > 0.005 && (
+            {upiOk(cfg) && i.total - i.paid - recv > 0.005 && (
               <View style={{ alignItems: 'center', marginTop: 12 }}>
                 <View style={{ backgroundColor: '#fff', padding: 4, borderRadius: 6 }}>
                   <QRCode value={upiLink(cfg, bill, r2(i.total - i.paid - recv))} size={170} quietZone={10} backgroundColor="#ffffff" color="#000000" ecl="M" />
@@ -822,7 +931,7 @@ function BillSheet({ id, onClose }) {
         <Btn s t="PDF" on={() => sharePdf(b)} />
       </Row>
       <Row>
-        <Btn s t="Text bhejein" on={() => { let ph = (b.cph || '').replace(/\D/g, ''); if (ph.length === 10) ph = '91' + ph; Linking.openURL('https://wa.me/' + ph + '?text=' + encodeURIComponent(billText(b, cfg))).catch(() => Share.share({ message: billText(b, cfg) })); }} />
+        <Btn s t="Text bhejein" on={() => sendWa(b.cph, billText(b, cfg))} />
         <Btn s t="Print" on={() => Print.printAsync({ html: billHtml(b, cfg) }).catch(() => {})} />
       </Row>
       <Row>
@@ -985,17 +1094,38 @@ function Reports() {
 }
 
 function Backup() {
-  const { C, cfg, bills, custs, prods, restore } = useX();
+  const { C, cfg, bills, custs, prods, applyBackup } = useX();
   const [paste, setPaste] = useState(''), [msg, setMsg] = useState('');
+  const doShare = async () => {
+    try {
+      const { pin, ...safeCfg } = cfg; // a PIN is never part of a backup
+      await Share.share({ title: 'Invoice-backup-' + today() + '.json', message: JSON.stringify({ app: 'invoice', v: 2, saved: today(), cfg: safeCfg, bills, custs, prods }) });
+      setMsg('Backup shared ✓');
+    } catch (e) { setMsg('Backup failed.'); }
+  };
+  const askShare = () => Alert.alert('Share backup?', 'The backup is plain, unencrypted text. It contains your business and bank details, your customers\' names and phone numbers, and all your bills. Share it only with yourself or with storage you trust.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Share', onPress: doShare }]);
+  const doRestore = () => {
+    const d = parseBackup(paste);
+    if (!d) { setMsg('This does not look like a valid backup.'); return; }
+    const ch = [];
+    [['upi', 'UPI ID'], ['bankName', 'Bank name'], ['bankAcc', 'Bank account'], ['ifsc', 'IFSC']].forEach(([k, l]) => {
+      if (d.cfg[k] !== undefined && d.cfg[k] !== (cfg[k] || '')) ch.push(l + ': ' + (cfg[k] || '(none)') + ' -> ' + (d.cfg[k] || '(none)'));
+    });
+    const go = () => { applyBackup(d); setPaste(''); setMsg('Restored ' + d.bills.length + ' bills, ' + d.custs.length + ' customers, ' + d.prods.length + ' items ✓'); };
+    Alert.alert('Restore this backup?',
+      'It contains ' + d.bills.length + ' bills, ' + d.custs.length + ' customers and ' + d.prods.length + ' items. Records with the same ID will be overwritten.' +
+      (ch.length ? '\n\nIt will also CHANGE your payment details:\n' + ch.join('\n') + '\n\nContinue only if you made this backup yourself.' : ''),
+      [{ text: 'Cancel', style: 'cancel' }, { text: 'Restore', style: ch.length ? 'destructive' : 'default', onPress: go }]);
+  };
   return (
     <View>
       <Card title="Backup">
-        <Text style={{ color: C.mute, fontSize: 12, marginBottom: 8 }}>Backup text ko Google Drive / WhatsApp / Notes me save kar lein. Naye phone par neeche paste karke Restore dabayein.</Text>
-        <Row style={{ marginBottom: 0 }}><Btn t="Backup share karein" on={async () => { try { await Share.share({ title: 'Invoice-backup-' + today() + '.json', message: JSON.stringify({ app: 'invoice', v: 2, saved: today(), cfg, bills, custs, prods }) }); setMsg('Backup share ho gaya ✓'); } catch (e) { setMsg('Backup fail ho gaya.'); } }} /></Row>
+        <Text style={{ color: C.mute, fontSize: 12, marginBottom: 8 }}>Save the backup text somewhere private (your own cloud storage or notes). To move to a new phone, paste it below and tap Restore. Never paste a backup that someone else sent you.</Text>
+        <Row style={{ marginBottom: 0 }}><Btn t="Share backup" on={askShare} /></Row>
       </Card>
       <Card title="Restore">
-        <Row><Field multiline value={paste} onChangeText={setPaste} placeholder="Backup text yahan paste karein" /></Row>
-        <Row style={{ marginBottom: 0 }}><Btn s t="Restore" on={() => setMsg(restore(paste) ? 'Restore ho gaya ✓' : 'Ye valid backup nahi lag raha.')} /></Row>
+        <Row><Field multiline value={paste} onChangeText={setPaste} placeholder="Paste your backup text here" /></Row>
+        <Row style={{ marginBottom: 0 }}><Btn s t="Restore" on={doRestore} /></Row>
       </Card>
       {!!msg && <Text style={{ color: C.mute, textAlign: 'center' }}>{msg}</Text>}
     </View>
@@ -1003,19 +1133,33 @@ function Backup() {
 }
 
 function Security() {
-  const { C, cfg, setCfg, flash } = useX();
-  const [a, setA] = useState(''), [b, setB] = useState('');
-  const set = () => {
-    if (!/^\d{4}$/.test(a)) { flash('4 digit ka PIN daalein'); return; }
-    if (a !== b) { flash('Dono PIN same nahi hain'); return; }
-    setCfg({ ...cfg, pin: a }); setA(''); setB(''); flash('PIN set ho gaya ✓');
+  const { C, pinLen, applyPin, dropPin, flash } = useX();
+  const [cur, setCur] = useState(''), [a, setA] = useState(''), [b, setB] = useState('');
+  const verify = async () => {
+    if (!pinLen) return true;
+    const r = await checkPin(cur);
+    if (r.ok) return true;
+    flash(r.err ? 'Secure storage is unavailable' : r.wait ? 'Too many attempts. Try again in ' + r.wait + 's' : 'Current PIN is wrong');
+    return false;
+  };
+  const set = async () => {
+    if (!/^\d{4,6}$/.test(a)) { flash('Use a 4 to 6 digit PIN'); return; }
+    if (weakPin(a)) { flash('That PIN is too easy to guess'); return; }
+    if (a !== b) { flash('The two PINs do not match'); return; }
+    if (!(await verify())) return;
+    try { await applyPin(a); setCur(''); setA(''); setB(''); flash('PIN saved ✓'); } catch (e) { flash('Could not save the PIN on this device'); }
+  };
+  const remove = async () => {
+    if (!(await verify())) return;
+    try { await dropPin(); setCur(''); setA(''); setB(''); flash('PIN removed'); } catch (e) { flash('Could not remove the PIN'); }
   };
   return (
     <View>
       <Card title="App lock (PIN)">
-        <Text style={{ color: C.mute, fontSize: 12, marginBottom: 8 }}>{cfg.pin ? 'PIN on hai. Naya PIN daal kar badal sakte hain.' : 'App kholne par 4 digit PIN poocha jayega.'}</Text>
-        <Row><Field label="New PIN" secureTextEntry keyboardType="number-pad" maxLength={4} value={a} onChangeText={setA} /><Field label="Confirm PIN" secureTextEntry keyboardType="number-pad" maxLength={4} value={b} onChangeText={setB} /></Row>
-        <Row style={{ marginBottom: 0 }}><Btn t={cfg.pin ? 'Change PIN' : 'Set PIN'} on={set} />{!!cfg.pin && <Btn danger t="PIN hatayein" on={() => { setCfg({ ...cfg, pin: '' }); flash('PIN hata diya'); }} />}</Row>
+        <Text style={{ color: C.mute, fontSize: 12, marginBottom: 8 }}>{pinLen ? 'A PIN is on. Enter your current PIN to change or remove it.' : 'Set a 4 to 6 digit PIN (6 is safer). The app locks when opened and again after it has been in the background for a minute.'}</Text>
+        {!!pinLen && <Row><Field label="Current PIN" secureTextEntry keyboardType="number-pad" maxLength={6} value={cur} onChangeText={setCur} /></Row>}
+        <Row><Field label="New PIN" secureTextEntry keyboardType="number-pad" maxLength={6} value={a} onChangeText={setA} /><Field label="Confirm PIN" secureTextEntry keyboardType="number-pad" maxLength={6} value={b} onChangeText={setB} /></Row>
+        <Row style={{ marginBottom: 0 }}><Btn t={pinLen ? 'Change PIN' : 'Set PIN'} on={set} />{!!pinLen && <Btn danger t="Remove PIN" on={remove} />}</Row>
       </Card>
     </View>
   );
@@ -1029,9 +1173,9 @@ function More() {
     const h = BackHandler.addEventListener('hardwareBackPress', () => { setSub(null); return true; });
     return () => h.remove();
   }, [sub]);
-  const items = [['profile', '🏪', 'Shop profile & GST', 'Business details, GST on/off, bank, terms'], ['reports', '📊', 'Reports', 'Sales aur GST report (CSV)'], ['backup', '💾', 'Backup / Restore', 'Data safe rakhein'], ['security', '🔒', 'App lock', 'PIN se app surakshit karein']];
+  const items = [['profile', '🏪', 'Shop profile & GST', 'Business details, GST on/off, bank, terms'], ['reports', '📊', 'Reports', 'Sales aur GST report (CSV)'], ['backup', '💾', 'Backup / Restore', 'Data safe rakhein'], ['security', '🔒', 'App lock', 'PIN se app surakshit karein'], ['terms', '📜', 'Terms & Conditions', 'How the app works and your responsibilities']];
   if (sub) {
-    const names = { profile: 'Shop profile & GST', reports: 'Reports', backup: 'Backup / Restore', security: 'App lock' };
+    const names = { profile: 'Shop profile & GST', reports: 'Reports', backup: 'Backup / Restore', security: 'App lock', terms: 'Terms & Conditions' };
     return (
       <View>
         <TouchableOpacity onPress={() => setSub(null)} style={{ marginBottom: 10 }}><Text style={{ color: C.g, fontWeight: '600' }}>← {names[sub]}</Text></TouchableOpacity>
@@ -1039,6 +1183,7 @@ function More() {
         {sub === 'reports' && <Reports />}
         {sub === 'backup' && <Backup />}
         {sub === 'security' && <Security />}
+        {sub === 'terms' && <Card title="Terms & Conditions"><TermsBody /></Card>}
       </View>
     );
   }
@@ -1055,16 +1200,57 @@ function More() {
   );
 }
 
-function Lock({ pin, onOk }) {
+function Lock({ len, onOk }) {
   const { C } = useX();
-  const [v, setV] = useState(''), [bad, setBad] = useState(false);
-  const ch = (t) => { setV(t); if (t.length === 4) { if (t === pin) onOk(); else { setBad(true); setTimeout(() => { setV(''); setBad(false); }, 600); } } };
+  const [v, setV] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
+  const ch = async (t) => {
+    const x = t.replace(/\D/g, '');
+    setV(x);
+    if (busy || x.length < len) return;
+    setBusy(true);
+    const r = await checkPin(x);
+    if (r.ok) { onOk(); return; }
+    setMsg(r.err ? 'Secure storage is unavailable. Restart the app and try again.' : r.wait ? 'Too many attempts. Try again in ' + r.wait + ' seconds.' : 'Wrong PIN. ' + r.left + ' attempt(s) left before a timeout.');
+    setTimeout(() => { setV(''); setBusy(false); }, 600);
+  };
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 }}>
       <Text style={{ fontSize: 40 }}>🔒</Text>
-      <Text style={{ color: C.ink, fontSize: 20, fontWeight: '700', marginVertical: 10 }}>PIN daalein</Text>
-      <TextInput autoFocus secureTextEntry keyboardType="number-pad" maxLength={4} value={v} onChangeText={ch}
-        style={{ color: bad ? C.red : C.ink, fontSize: 30, letterSpacing: 12, textAlign: 'center', borderBottomWidth: 2, borderColor: bad ? C.red : C.g, minWidth: 160 }} />
+      <Text style={{ color: C.ink, fontSize: 20, fontWeight: '700', marginVertical: 10 }}>Enter PIN</Text>
+      <TextInput autoFocus secureTextEntry keyboardType="number-pad" maxLength={len} value={v} onChangeText={ch}
+        style={{ color: msg && busy ? C.red : C.ink, fontSize: 30, letterSpacing: 12, textAlign: 'center', borderBottomWidth: 2, borderColor: msg && busy ? C.red : C.g, minWidth: 160 }} />
+      {!!msg && <Text style={{ color: C.red, marginTop: 14, textAlign: 'center' }}>{msg}</Text>}
+    </View>
+  );
+}
+
+function TermsBody() {
+  const { C } = useX();
+  return (
+    <View>
+      <Text style={{ color: C.mute, fontSize: 12, marginBottom: 10 }}>Last updated: {TERMS_UPDATED}</Text>
+      {TERMS.map((s, k) => (
+        <View key={k} style={{ marginBottom: 14 }}>
+          <Text style={{ color: C.ink, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>{k + 1}. {s.h}</Text>
+          {s.p.map((t, j) => <Text key={j} style={{ color: C.ink, fontSize: 13, lineHeight: 19, marginBottom: 4 }}>{t}</Text>)}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function TermsGate({ onAccept }) {
+  const { C, ins } = useX();
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ paddingHorizontal: 14, paddingTop: 10 }}>
+        <Text style={{ color: C.ink, fontSize: 22, fontWeight: '700' }}>Terms & Conditions</Text>
+        <Text style={{ color: C.mute, fontSize: 12, marginTop: 2 }}>Please read these terms. You need to accept them to use the app.</Text>
+      </View>
+      <ScrollView contentContainerStyle={{ padding: 14 }}><TermsBody /></ScrollView>
+      <View style={{ padding: 14, paddingBottom: 14 + ins.bottom, borderTopWidth: 1, borderColor: C.line, backgroundColor: C.paper }}>
+        <Btn t="I Agree" on={onAccept} />
+      </View>
     </View>
   );
 }
@@ -1084,12 +1270,16 @@ function Main() {
   const [editor, setEditor] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [locked, setLocked] = useState(false);
+  const [pinLen, setPinLen] = useState(0); // 0 = no PIN set
+  const [termsOk, setTermsOk] = useState(false);
+  const pinRef = useRef(0); pinRef.current = pinLen;
+  const bgAt = useRef(0);
   const [toast, setToast] = useState('');
   const [kb, setKb] = useState(false);
   const [snapB, setSnapB] = useState(null);
   const snapRef = useRef(null);
 
-  const C = palette(scheme === 'dark', cfg.accent || ACCENTS[0]);
+  const C = palette(scheme === 'dark', safeAccent(cfg.accent));
   const gstOn = !!cfg.gstOn;
   const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 2200); };
 
@@ -1101,9 +1291,24 @@ function Main() {
         const oc = await rd('ac_cfg', null), oh = await rd('ac_hist', null);
         if (oc || oh) { const m = migrateOld(oc || {}, oh || []); c = m.cfg; b = m.bills; }
       }
+      // PIN lives in the device keystore. Move any legacy plain-text PIN out of AsyncStorage.
+      let pl = 0;
+      let sp = await secGet();
+      if (sp && !sp.err && !c && !(b && b.length)) { await removePin(); sp = null; } // fresh install: drop a stale keychain PIN
+      if (sp) {
+        pl = sp.err ? 6 : sp.len || 6;
+        if (!sp.err && c && c.pin !== undefined) { const { pin: oldPin, ...rest } = c; c = rest; }
+      } else if (c && c.pin) {
+        const lp = String(c.pin);
+        if (/^\d{4,6}$/.test(lp)) {
+          pl = lp.length;
+          try { await savePin(lp); const { pin: oldPin, ...rest } = c; c = rest; } catch (e) { /* keep the lock; it will fail closed */ }
+        }
+      }
       setCfg(c || {}); setBills(b || []);
       setCusts(await rd('bb2_custs', [])); setProds(await rd('bb2_prods', []));
-      if (c && c.pin) setLocked(true);
+      if (pl) { setPinLen(pl); setLocked(true); }
+      try { setTermsOk((await AsyncStorage.getItem('bb2_terms')) === TERMS_VERSION); } catch (e) { setTermsOk(false); }
       setReady(true);
     })();
     const a = Keyboard.addListener('keyboardDidShow', () => setKb(true));
@@ -1114,6 +1319,14 @@ function Main() {
   useEffect(() => { if (ready) AsyncStorage.setItem('bb2_bills', JSON.stringify(bills)).catch(() => {}); }, [bills, ready]);
   useEffect(() => { if (ready) AsyncStorage.setItem('bb2_custs', JSON.stringify(custs)).catch(() => {}); }, [custs, ready]);
   useEffect(() => { if (ready) AsyncStorage.setItem('bb2_prods', JSON.stringify(prods)).catch(() => {}); }, [prods, ready]);
+  // Re-lock when the app has been in the background for more than a minute
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'background') bgAt.current = Date.now();
+      else if (st === 'active' && bgAt.current) { if (pinRef.current && Date.now() - bgAt.current > 60000) setLocked(true); bgAt.current = 0; }
+    });
+    return () => sub.remove();
+  }, []);
 
   /* actions */
   const newDraft = (type, cu) => ({
@@ -1165,31 +1378,27 @@ function Main() {
     setSnapB(null);
   };
   const remind = (name, phone, no, bal) => {
-    let ph = (phone || '').replace(/\D/g, ''); if (ph.length === 10) ph = '91' + ph;
-    const t = reminderText(name, no, bal, cfg);
-    Linking.openURL('https://wa.me/' + ph + '?text=' + encodeURIComponent(t)).catch(() => Share.share({ message: t }));
+    sendWa(phone, reminderText(name, no, bal, cfg));
   };
-  const restore = (txt) => {
-    try {
-      let d = JSON.parse(txt);
-      if (d && Array.isArray(d.hist)) { const m = migrateOld(d.cfg || {}, d.hist); d = { cfg: m.cfg, bills: m.bills, custs: [], prods: [] }; }
-      if (!d || !Array.isArray(d.bills)) return false;
-      const merge = (cur, inc) => { const m = [...cur]; (inc || []).forEach((x) => { if (!x || !x.id) return; const k = m.findIndex((y) => y.id === x.id); if (k >= 0) m[k] = x; else m.push(x); }); return m; };
-      setBills((l) => merge(l, d.bills).sort((a, z) => (a.dt < z.dt ? 1 : -1)));
-      setCusts((l) => merge(l, d.custs)); setProds((l) => merge(l, d.prods));
-      if (d.cfg) setCfg((c) => ({ ...c, ...d.cfg }));
-      return true;
-    } catch (e) { return false; }
+  const applyBackup = (d) => {
+    const merge = (cur, inc) => { const idx = new Map(cur.map((y, k) => [y.id, k])); const m = [...cur]; inc.forEach((x) => { if (idx.has(x.id)) m[idx.get(x.id)] = x; else { idx.set(x.id, m.length); m.push(x); } }); return m; };
+    setBills((l) => merge(l, d.bills).sort((a, z) => (a.dt < z.dt ? 1 : -1)));
+    setCusts((l) => merge(l, d.custs)); setProds((l) => merge(l, d.prods));
+    if (Object.keys(d.cfg).length) setCfg((c) => ({ ...c, ...d.cfg }));
   };
+  const applyPin = async (p) => { await savePin(p); setPinLen(p.length); };
+  const dropPin = async () => { await removePin(); setPinLen(0); };
+  const acceptTerms = async () => { try { await AsyncStorage.setItem('bb2_terms', TERMS_VERSION); } catch (e) { /* ignore */ } setTermsOk(true); };
 
-  const X = { ins, C, cfg, setCfg, bills, setBills, custs, setCusts, prods, setProds, gstOn, flash, openEditor, editBill, duplicate, convert, saveBill, deleteBill, sharePdf, shareImage, remind, restore, openBill: (id) => setSheet(id) };
+  const X = { ins, C, cfg, setCfg, bills, setBills, custs, setCusts, prods, setProds, gstOn, flash, openEditor, editBill, duplicate, convert, saveBill, deleteBill, sharePdf, shareImage, remind, applyBackup, pinLen, applyPin, dropPin, openBill: (id) => setSheet(id) };
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: C.bg }} />;
 
   const tabs = [['home', '🏠', 'Home'], ['bills', '🧾', 'Bills'], ['customers', '👥', 'Customers'], ['items', '📦', 'Items'], ['more', '⚙️', 'More']];
   const titles = { home: 'Dashboard', bills: 'Bills', customers: 'Customers', items: 'Items', more: 'More' };
   let body;
-  if (locked) body = <Lock pin={cfg.pin} onOk={() => setLocked(false)} />;
+  if (locked) body = <Lock len={pinLen || 6} onOk={() => setLocked(false)} />;
+  else if (!termsOk) body = <TermsGate onAccept={acceptTerms} />;
   else if (!cfg.name) body = <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 40 + ins.bottom }} keyboardShouldPersistTaps="handled"><ProfileForm first /></ScrollView>;
   else if (editor) body = <Editor key={editor.id} draft={editor} onClose={() => setEditor(null)} />;
   else body = (

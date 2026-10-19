@@ -22,7 +22,8 @@
         "backgroundColor": "#0f4c3a"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.shabaj000.invoicemaker"
+      "package": "com.shabaj000.invoicemaker",
+      "allowBackup": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
