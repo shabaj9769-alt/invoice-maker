@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Invoice Maker",
+    "slug": "invoice-maker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shabaj000.invoicemaker"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f4c3a"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.shabaj000.invoicemaker"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "owner": "shabaj000s-team",
+    "extra": {
+      "eas": {
+        "projectId": "8ee47263-61c7-400f-b618-3c23981b8866"
+      }
+    }
+  }
+}
