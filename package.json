@@ -23,7 +23,8 @@
     "react-native-svg": "15.12.1",
     "react-native-view-shot": "4.0.3",
     "expo-secure-store": "~15.0.7",
-    "expo-crypto": "~15.0.7"
+    "expo-crypto": "~15.0.7",
+    "expo-contacts": "~15.0.0"
   },
   "private": true
 }
