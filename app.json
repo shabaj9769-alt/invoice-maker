@@ -2,7 +2,7 @@
   "expo": {
     "name": "Invoice Maker",
     "slug": "invoice-maker",
-    "version": "1.0.2",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -23,7 +23,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.shabaj000.invoicemaker",
-      "versionCode": 3,
+      "versionCode": 5,
       "allowBackup": false
     },
     "web": {
@@ -34,6 +34,14 @@
       "eas": {
         "projectId": "8ee47263-61c7-400f-b618-3c23981b8866"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Invoice Maker to read your contacts so you can add them as customers. Contacts are only used on your phone."
+        }
+      ]
+    ]
   }
 }
