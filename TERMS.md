@@ -1,6 +1,6 @@
 # Invoice Maker: Terms and Conditions and Privacy Policy
 
-_Last updated: October 21, 2026_
+_Last updated: October 22, 2026_
 
 ## 1. About this app
 
@@ -102,7 +102,7 @@ The App contains no ads, no analytics and no tracking. It does not send your dat
 
 Data leaves your device only when you choose to share, print or back up a bill, for example through WhatsApp, email, cloud storage or a printer. Those services have their own privacy policies.
 
-The App may ask for access to your camera or photos only for features you use (for example adding a logo or a UPI QR image), and only on your device. Uninstalling the App deletes all data stored in it. If you made a backup file, you are responsible for keeping it safe or deleting it.
+The App asks for access to your contacts only if you tap "Contacts" on the Customers screen, so you can pick people to add as customers. Contacts you select are saved only inside the App on your device. We do not upload, store or share your contacts, and you can deny or withdraw this permission at any time in your phone settings. The App may also ask for access to your camera or photos only for features you use (for example adding a logo or a UPI QR image), and only on your device. Uninstalling the App deletes all data stored in it. If you made a backup file, you are responsible for keeping it safe or deleting it.
 
 The App is meant for businesses and adults and is not directed at children under 18.
 
