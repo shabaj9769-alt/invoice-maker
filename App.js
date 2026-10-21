@@ -267,7 +267,7 @@ const billText = (b, cfg) => {
   return L.join('\n');
 };
 const reminderText = (name, no, bal, cfg) =>
-  'Namaste ' + (name || '') + ',\n' + (cfg.name || 'Shop') + ' ki taraf se yaad dilana tha ki ' + (no ? 'bill ' + no + ' ka ' : '') + money(bal) + ' baaki hai. Kripya jaldi payment kar dein.' + (cfg.upi ? '\nUPI: ' + cfg.upi : '') + '\nDhanyavaad 🙏';
+  'Hello ' + (name || '') + ',\n' + (cfg.name || 'Shop') + ' is sending a friendly reminder that ' + (no ? 'bill ' + no + ' has ' : '') + money(bal) + ' pending. Please make the payment soon.' + (cfg.upi ? '\nUPI: ' + cfg.upi : '') + '\nThank you 🙏';
 
 const billHtml = (b, cfg) => {
   const acc = safeAccent(cfg.accent);
@@ -378,18 +378,28 @@ function Chips({ value, options, onChange }) {
 }
 function Sheet({ visible, onClose, title, children, footer }) {
   const { C, ins } = useX();
+  const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const a = Keyboard.addListener('keyboardDidShow', (e) => setKbH((e && e.endCoordinates && e.endCoordinates.height) || 0));
+    const b = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
+    return () => { a.remove(); b.remove(); };
+  }, []);
+  const winH = Dimensions.get('window').height;
+  const maxH = kbH ? Math.max(220, winH - kbH - ins.top - 24) : winH * 0.88;
+  const bottomInset = kbH ? 0 : ins.bottom;
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: '#0009', justifyContent: 'flex-end' }}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={{ flex: 1, backgroundColor: '#0009', justifyContent: 'flex-end', paddingBottom: kbH }}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={{ backgroundColor: C.bg, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: Dimensions.get('window').height * 0.88 }}>
+          <View style={{ backgroundColor: C.bg, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: maxH }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, paddingBottom: 6 }}>
               <Text style={{ color: C.ink, fontWeight: '700', fontSize: 17, flex: 1 }} numberOfLines={1}>{title}</Text>
               <TouchableOpacity onPress={onClose}><Text style={{ color: C.mute, fontSize: 24, paddingHorizontal: 6 }}>×</Text></TouchableOpacity>
             </View>
-            <ScrollView style={{ paddingHorizontal: 14 }} contentContainerStyle={{ paddingBottom: 14 + (footer ? 0 : ins.bottom) }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
-            {!!footer && <View style={{ padding: 12, paddingTop: 8, paddingBottom: 12 + ins.bottom, borderTopWidth: 1, borderColor: C.line, backgroundColor: C.paper }}>{footer}</View>}
+            <ScrollView style={{ paddingHorizontal: 14 }} contentContainerStyle={{ paddingBottom: 14 + (footer ? 0 : bottomInset) }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+            {!!footer && <View style={{ padding: 12, paddingTop: 8, paddingBottom: 12 + bottomInset, borderTopWidth: 1, borderColor: C.line, backgroundColor: C.paper }}>{footer}</View>}
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -452,14 +462,14 @@ function ProfileForm({ first, onDone }) {
   const [err, setErr] = useState('');
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const save = () => {
-    if (!(d.name || '').trim()) { setErr('Shop / business ka naam zaroori hai.'); return; }
+    if (!(d.name || '').trim()) { setErr('Shop / business name is required.'); return; }
     const gstin = (d.gstin || '').trim().toUpperCase();
-    if (d.gstOn && gstin.length !== 15) { setErr('GST on hai to 15 character ka sahi GSTIN daalna zaroori hai.'); return; }
+    if (d.gstOn && gstin.length !== 15) { setErr('If GST is on, please enter a valid 15-character GSTIN.'); return; }
     const upi = (d.upi || '').trim();
-    if (upi && !/^[\w.\-]{2,}@[A-Za-z][\w.\-]{1,}$/.test(upi)) { setErr('UPI ID sahi format me daalein, jaise name@upi (space nahi).'); return; }
+    if (upi && !/^[\w.\-]{2,}@[A-Za-z][\w.\-]{1,}$/.test(upi)) { setErr('Enter the UPI ID in the correct format, like name@upi (no spaces).'); return; }
     setCfg({ ...d, name: d.name.trim(), upi, gstin: d.gstOn ? gstin : '' });
     setErr('');
-    flash(first ? 'Profile ban gayi ✓' : 'Profile save ho gayi ✓');
+    flash(first ? 'Profile created ✓' : 'Profile saved ✓');
     onDone && onDone();
   };
   return (
@@ -467,7 +477,7 @@ function ProfileForm({ first, onDone }) {
       {first && (
         <View style={{ marginVertical: 18 }}>
           <Text style={{ color: C.g, fontSize: 26, fontWeight: '700' }}>Welcome 👋</Text>
-          <Text style={{ color: C.mute, marginTop: 4 }}>Apni shop ki details ek baar bharein. Baad me Profile se kabhi bhi edit kar sakte hain.</Text>
+          <Text style={{ color: C.mute, marginTop: 4 }}>Enter your shop details once. You can edit them later from Profile.</Text>
         </View>
       )}
       <Card title="Business">
@@ -482,8 +492,8 @@ function ProfileForm({ first, onDone }) {
       <Card title="GST">
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: d.gstOn ? 10 : 0 }}>
           <View style={{ flex: 1, paddingRight: 10 }}>
-            <Text style={{ color: C.ink, fontWeight: '600' }}>GST registered hain?</Text>
-            <Text style={{ color: C.mute, fontSize: 12 }}>Off rahega to bills me GST dikhega hi nahi.</Text>
+            <Text style={{ color: C.ink, fontWeight: '600' }}>GST registered?</Text>
+            <Text style={{ color: C.mute, fontSize: 12 }}>If off, GST will not be shown on bills.</Text>
           </View>
           <Switch value={!!d.gstOn} onValueChange={(v) => set('gstOn', v)} trackColor={{ true: C.btn }} />
         </View>
@@ -494,8 +504,8 @@ function ProfileForm({ first, onDone }) {
           </View>
         )}
       </Card>
-      <Card title="Payment details (bill par dikhenge)">
-        <Row><Field label="UPI ID (QR code ke liye)" autoCapitalize="none" value={d.upi || ''} onChangeText={(v) => set('upi', v)} placeholder="name@upi" /></Row>
+      <Card title="Payment details (shown on bills)">
+        <Row><Field label="UPI ID (for QR code)" autoCapitalize="none" value={d.upi || ''} onChangeText={(v) => set('upi', v)} placeholder="name@upi" /></Row>
         <Row><Field label="Bank name" value={d.bankName || ''} onChangeText={(v) => set('bankName', v)} /></Row>
         <Row>
           <Field label="Account number" keyboardType="number-pad" value={d.bankAcc || ''} onChangeText={(v) => set('bankAcc', v)} />
@@ -509,10 +519,10 @@ function ProfileForm({ first, onDone }) {
         </Row>
         <Row><Field label="Terms & conditions" multiline value={d.terms || ''} onChangeText={(v) => set('terms', v)} placeholder="e.g. Goods once sold will not be taken back." /></Row>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <Text style={{ color: C.ink }}>Total ko round off karein</Text>
+          <Text style={{ color: C.ink }}>Round off the total</Text>
           <Switch value={!!d.round} onValueChange={(v) => set('round', v)} trackColor={{ true: C.btn }} />
         </View>
-        <Text style={{ fontSize: 12, color: C.mute, marginBottom: 6 }}>Bill ka rang</Text>
+        <Text style={{ fontSize: 12, color: C.mute, marginBottom: 6 }}>Bill colour</Text>
         <View style={{ flexDirection: 'row', gap: 12 }}>
           {ACCENTS.map((a) => (
             <TouchableOpacity key={a} onPress={() => set('accent', a)}
@@ -619,6 +629,7 @@ function Editor({ draft, onClose }) {
   const { C, cfg, bills, prods, custs, saveBill, sharePdf, shareImage, flash, ins } = useX();
   const [d, setD] = useState(draft);
   const [pickP, setPickP] = useState(false);
+  const [selP, setSelP] = useState([]);
   const [pickC, setPickC] = useState(false);
   const [q, setQ] = useState('');
   const [kb, setKb] = useState(false);
@@ -634,12 +645,19 @@ function Editor({ draft, onClose }) {
   const recv = +d.recv || 0;
   const updItem = (k, key, v) => setD((x) => ({ ...x, items: x.items.map((it, j) => (j === k ? { ...it, [key]: v } : it)) }));
   const blankItem = () => ({ n: '', q: '1', r: '', u: '', hsn: '', g: String(cfg.defGst || '0'), pid: '' });
-  const addProd = (p) => { setD((x) => ({ ...x, items: [...x.items.filter((it) => it.n || +it.r), { n: p.name, q: '1', r: String(p.rate || ''), u: p.unit || '', hsn: p.hsn || '', g: String(p.gst ?? cfg.defGst ?? '0'), pid: p.id }] })); setPickP(false); setQ(''); };
+  const closePick = () => { setPickP(false); setSelP([]); setQ(''); };
+  const togP = (id) => setSelP((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]));
+  const addProds = () => {
+    const chosen = prods.filter((p) => selP.includes(p.id));
+    if (!chosen.length) return;
+    setD((x) => ({ ...x, items: [...x.items.filter((it) => it.n || +it.r), ...chosen.map((p) => ({ n: p.name, q: '1', r: String(p.rate || ''), u: p.unit || '', hsn: p.hsn || '', g: String(p.gst ?? cfg.defGst ?? '0'), pid: p.id }))] }));
+    closePick();
+  };
   const pickCust = (cu) => { setD((x) => ({ ...x, cid: cu.id, cust: cu.name, cph: cu.phone || '', caddr: cu.addr || '', cgstin: cu.gstin || '' })); setPickC(false); setQ(''); };
 
   const persist = () => {
     const items = d.items.filter((it) => it.n.trim() && (+it.q || 0) > 0);
-    if (!items.length) { flash('Kam se kam ek item daaliye'); return null; }
+    if (!items.length) { flash('Please add at least one item'); return null; }
     const { recv: _r, mode, isNew, ...rest } = bill;
     const payments = [...(rest.payments || [])];
     if (d.type === 'invoice' && recv > 0) payments.push({ amt: recv, dt: today(), mode: d.mode });
@@ -648,7 +666,7 @@ function Editor({ draft, onClose }) {
     setD((x) => ({ ...x, payments, recv: '', isNew: false, cid: saved.cid }));
     return saved;
   };
-  const doSave = () => { const b = persist(); if (b) { flash(TYPE_NAME[b.type] + ' save ho gaya ✓'); onClose(); } };
+  const doSave = () => { const b = persist(); if (b) { flash(TYPE_NAME[b.type] + ' saved ✓'); onClose(); } };
   const doPdf = async () => { const b = persist(); if (b) await sharePdf(b); };
   const doPrint = () => { const b = persist(); if (b) Print.printAsync({ html: billHtml(b, cfg) }).catch(() => {}); };
   const doWa = async () => { const b = persist(); if (b) await shareImage(b); };
@@ -656,7 +674,7 @@ function Editor({ draft, onClose }) {
     const b = persist(); if (!b) return;
     sendWa(b.cph, billText(b, cfg));
   };
-  const back = () => Alert.alert('Bina save kiye bahar jayein?', 'Aapke badlav save nahi honge.', [{ text: 'Ruko', style: 'cancel' }, { text: 'Bahar jao', style: 'destructive', onPress: onClose }]);
+  const back = () => Alert.alert('Leave without saving?', 'Your changes will not be saved.', [{ text: 'Stay', style: 'cancel' }, { text: 'Leave', style: 'destructive', onPress: onClose }]);
   useEffect(() => {
     const h = BackHandler.addEventListener('hardwareBackPress', () => { back(); return true; });
     return () => h.remove();
@@ -741,17 +759,17 @@ function Editor({ draft, onClose }) {
 
         {d.type === 'invoice' && (
           <Card title="Payment">
-            {i.paid > 0 && <Text style={{ color: C.ok, marginBottom: 8 }}>Pehle mile: {money(i.paid)}</Text>}
+            {i.paid > 0 && <Text style={{ color: C.ok, marginBottom: 8 }}>Received earlier: {money(i.paid)}</Text>}
             <Row>
-              <Field label="Abhi mile (₹)" keyboardType="decimal-pad" value={d.recv} onChangeText={(v) => set('recv', v)} placeholder="0" />
+              <Field label="Received now (₹)" keyboardType="decimal-pad" value={d.recv} onChangeText={(v) => set('recv', v)} placeholder="0" />
               <Select label="Mode" value={d.mode} options={MODES.map((m) => ({ v: m, l: m }))} onChange={(v) => set('mode', v)} />
             </Row>
             <Row style={{ marginBottom: 6 }}>
-              <Btn s t="Poora paid" on={() => set('recv', String(Math.max(0, r2(i.total - i.paid))))} />
-              <Btn s t="Unpaid (udhaar)" on={() => set('recv', '')} />
+              <Btn s t="Fully paid" on={() => set('recv', String(Math.max(0, r2(i.total - i.paid))))} />
+              <Btn s t="Unpaid (credit)" on={() => set('recv', '')} />
             </Row>
             <Text style={{ color: i.total - i.paid - recv > 0.005 ? C.red : C.ok, fontWeight: '700' }}>
-              Baaki: {money(Math.max(0, r2(i.total - i.paid - recv)))}
+              Balance: {money(Math.max(0, r2(i.total - i.paid - recv)))}
             </Text>
             {upiOk(cfg) && i.total - i.paid - recv > 0.005 && (
               <View style={{ alignItems: 'center', marginTop: 12 }}>
@@ -765,7 +783,7 @@ function Editor({ draft, onClose }) {
         )}
 
         <Card title="Notes">
-          <Row style={{ marginBottom: 0 }}><Field multiline value={d.notes} onChangeText={(v) => set('notes', v)} placeholder="Customer ke liye koi note (optional)" /></Row>
+          <Row style={{ marginBottom: 0 }}><Field multiline value={d.notes} onChangeText={(v) => set('notes', v)} placeholder="Note for the customer (optional)" /></Row>
         </Card>
       </ScrollView>
 
@@ -783,25 +801,34 @@ function Editor({ draft, onClose }) {
         </View>
       )}
 
-      <Sheet visible={pickP} onClose={() => setPickP(false)} title="Items se chunein">
+      <Sheet visible={pickP} onClose={closePick} title="Choose from items"
+        footer={<Btn t={selP.length ? 'Add ' + selP.length + (selP.length === 1 ? ' item' : ' items') : 'Tap items to select'} on={addProds} />}>
         <Search value={q} onChange={setQ} ph="Item search" />
-        {prods.filter((p) => p.name.toLowerCase().includes(ql)).map((p) => (
-          <TouchableOpacity key={p.id} onPress={() => addProd(p)} style={{ backgroundColor: C.paper, borderRadius: 8, padding: 12, marginBottom: 6, borderWidth: 1, borderColor: C.line }}>
-            <Text style={{ color: C.ink, fontWeight: '600' }}>{p.name}</Text>
-            <Text style={{ color: C.mute, fontSize: 12 }}>{money(+p.rate || 0)}{p.unit ? '/' + p.unit : ''}{g ? ' · GST ' + (p.gst ?? 0) + '%' : ''}{p.track ? ' · Stock ' + (p.stock || 0) : ''}</Text>
-          </TouchableOpacity>
-        ))}
-        {!prods.length && <Empty t="Abhi koi item save nahi hai. Items tab me jaakar add karein." />}
+        {prods.filter((p) => p.name.toLowerCase().includes(ql)).map((p) => {
+          const on = selP.includes(p.id);
+          return (
+            <TouchableOpacity key={p.id} onPress={() => togP(p.id)} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: on ? C.bg : C.paper, borderRadius: 8, padding: 12, marginBottom: 6, borderWidth: on ? 2 : 1, borderColor: on ? C.g : C.line }}>
+              <View style={{ width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: on ? C.g : C.mute, backgroundColor: on ? C.g : 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                {on && <Text style={{ color: C.btnt, fontWeight: '700', fontSize: 14 }}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: C.ink, fontWeight: '600' }}>{p.name}</Text>
+                <Text style={{ color: C.mute, fontSize: 12 }}>{money(+p.rate || 0)}{p.unit ? '/' + p.unit : ''}{g ? ' · GST ' + (p.gst ?? 0) + '%' : ''}{p.track ? ' · Stock ' + (p.stock || 0) : ''}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+        {!prods.length && <Empty t="No items saved yet. Add them from the Items tab." />}
       </Sheet>
-      <Sheet visible={pickC} onClose={() => setPickC(false)} title="Customer chunein">
-        <Search value={q} onChange={setQ} ph="Naam ya phone" />
+      <Sheet visible={pickC} onClose={() => setPickC(false)} title="Choose customer">
+        <Search value={q} onChange={setQ} ph="Name or phone" />
         {custs.filter((x) => (x.name + x.phone).toLowerCase().includes(ql)).map((x) => (
           <TouchableOpacity key={x.id} onPress={() => pickCust(x)} style={{ backgroundColor: C.paper, borderRadius: 8, padding: 12, marginBottom: 6, borderWidth: 1, borderColor: C.line }}>
             <Text style={{ color: C.ink, fontWeight: '600' }}>{x.name}</Text>
             <Text style={{ color: C.mute, fontSize: 12 }}>{x.phone}</Text>
           </TouchableOpacity>
         ))}
-        {!custs.length && <Empty t="Abhi koi customer save nahi hai. Bill save karne par customer apne aap save ho jaata hai." />}
+        {!custs.length && <Empty t="No customers saved yet. A customer is saved automatically when you save a bill." />}
       </Sheet>
     </View>
   );
@@ -826,18 +853,18 @@ function Home() {
   );
   return (
     <View>
-      <Text style={{ color: C.mute }}>Namaste 👋</Text>
+      <Text style={{ color: C.mute }}>Welcome 👋</Text>
       <Text style={{ color: C.ink, fontSize: 24, fontWeight: '700', marginBottom: 12 }}>{cfg.name}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-        <Stat l="Aaj ki sale" v={money(sum((b) => b.dt === t))} />
-        <Stat l="Is mahine ki sale" v={money(sum((b) => b.dt.slice(0, 7) === m))} />
-        <Stat l="Baaki lena hai" v={money(due)} col={due > 0 ? C.red : C.ok} sub={pending.length + ' bill pending'} />
+        <Stat l="Today's sales" v={money(sum((b) => b.dt === t))} sub={'Only ' + fmtD(t)} />
+        <Stat l="This month's sales" v={money(sum((b) => b.dt.slice(0, 7) === m))} sub={['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m.slice(5, 7) - 1] + ' ' + m.slice(0, 4) + ' · full month'} />
+        <Stat l="Amount to receive" v={money(due)} col={due > 0 ? C.red : C.ok} sub={pending.length + ' bill pending'} />
         <Stat l="Total bills" v={String(infos.filter(({ b }) => b.type === 'invoice').length)} sub={infos.filter(({ b }) => b.type === 'quote').length + ' quotation'} />
       </View>
       <Row><Btn t="+ New Invoice" on={() => openEditor('invoice')} /><Btn s t="+ Quotation" on={() => openEditor('quote')} /></Row>
 
       <Card title="Pending payments">
-        {!pending.length && <Text style={{ color: C.mute }}>Koi payment baaki nahi 🎉</Text>}
+        {!pending.length && <Text style={{ color: C.mute }}>No pending payments 🎉</Text>}
         {pending.slice(0, 5).map(({ b, i }) => (
           <TouchableOpacity key={b.id} onPress={() => openBill(b.id)} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderColor: C.line }}>
             <View style={{ flex: 1 }}>
@@ -851,7 +878,7 @@ function Home() {
       </Card>
 
       <Card title="Recent bills">
-        {!infos.length && <Text style={{ color: C.mute }}>Abhi koi bill nahi. “+ New Invoice” dabayein.</Text>}
+        {!infos.length && <Text style={{ color: C.mute }}>No bills yet. Tap “+ New Invoice”.</Text>}
         {infos.slice(0, 5).map(({ b, i }) => <BillRow key={b.id} b={b} i={i} onPress={() => openBill(b.id)} />)}
       </Card>
     </View>
@@ -881,11 +908,11 @@ function Bills() {
     ((b.cust || '') + b.no + (b.cph || '')).toLowerCase().includes(q.toLowerCase()));
   return (
     <View>
-      <Search value={q} onChange={setQ} ph="Naam, phone ya bill number" />
+      <Search value={q} onChange={setQ} ph="Name, phone or bill number" />
       <Chips value={ty} onChange={setTy} options={[['all', 'All'], ['invoice', 'Invoices'], ['quote', 'Quotations'], ['cn', 'Credit notes']]} />
       <Chips value={stt} onChange={setStt} options={[['all', 'Any status'], ['Paid', 'Paid'], ['Partial', 'Partial'], ['Unpaid', 'Unpaid']]} />
       <View style={{ backgroundColor: C.paper, borderRadius: 12, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12 }}>
-        {!list.length ? <Empty t="Koi bill nahi mila." /> : list.map(({ b, i }) => <BillRow key={b.id} b={b} i={i} onPress={() => openBill(b.id)} />)}
+        {!list.length ? <Empty t="No bills found." /> : list.map(({ b, i }) => <BillRow key={b.id} b={b} i={i} onPress={() => openBill(b.id)} />)}
       </View>
     </View>
   );
@@ -901,7 +928,7 @@ function BillSheet({ id, onClose }) {
   const addPay = () => {
     const a = +amt || 0; if (a <= 0) return;
     setBills((l) => l.map((x) => (x.id === b.id ? { ...x, payments: [...(x.payments || []), { amt: a, dt: today(), mode }] } : x)));
-    setPay(false); setAmt(''); flash('Payment add ho gayi ✓');
+    setPay(false); setAmt(''); flash('Payment added ✓');
   };
   const rm = (k) => setBills((l) => l.map((x) => (x.id === b.id ? { ...x, payments: x.payments.filter((_, j) => j !== k) } : x)));
   return (
@@ -911,7 +938,7 @@ function BillSheet({ id, onClose }) {
         <Text style={{ color: C.mute, fontSize: 12, marginBottom: 8 }}>{fmtD(b.dt)}{b.due ? ' · Due ' + fmtD(b.due) : ''}{b.cph ? ' · ' + b.cph : ''}</Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: C.ink }}>Total</Text><Text style={{ color: C.ink, fontWeight: '700' }}>{money(i.total)}</Text></View>
         {b.type === 'invoice' && <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: C.ok }}>Mile</Text><Text style={{ color: C.ok }}>{money(i.paid)}</Text></View>}
-        {b.type === 'invoice' && <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: C.red }}>Baaki</Text><Text style={{ color: C.red, fontWeight: '700' }}>{money(i.bal)}</Text></View>}
+        {b.type === 'invoice' && <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: C.red }}>Balance</Text><Text style={{ color: C.red, fontWeight: '700' }}>{money(i.bal)}</Text></View>}
         <View style={{ marginTop: 8 }}><StatusPill i={i} /></View>
         {(b.payments || []).map((p, k) => (
           <View key={k} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
@@ -921,9 +948,9 @@ function BillSheet({ id, onClose }) {
         ))}
       </Card>
       {pay && (
-        <Card title="Payment add karein">
+        <Card title="Add payment">
           <Row><Field label="Amount ₹" keyboardType="decimal-pad" value={amt} onChangeText={setAmt} /><Select label="Mode" value={mode} options={MODES.map((m) => ({ v: m, l: m }))} onChange={setMode} /></Row>
-          <Row style={{ marginBottom: 0 }}><Btn s t="Poora baaki" on={() => setAmt(String(i.bal))} /><Btn t="Add" on={addPay} /></Row>
+          <Row style={{ marginBottom: 0 }}><Btn s t="Full balance" on={() => setAmt(String(i.bal))} /><Btn t="Add" on={addPay} /></Row>
         </Card>
       )}
       <Row>
@@ -931,7 +958,7 @@ function BillSheet({ id, onClose }) {
         <Btn s t="PDF" on={() => sharePdf(b)} />
       </Row>
       <Row>
-        <Btn s t="Text bhejein" on={() => sendWa(b.cph, billText(b, cfg))} />
+        <Btn s t="Send text" on={() => sendWa(b.cph, billText(b, cfg))} />
         <Btn s t="Print" on={() => Print.printAsync({ html: billHtml(b, cfg) }).catch(() => {})} />
       </Row>
       <Row>
@@ -939,8 +966,8 @@ function BillSheet({ id, onClose }) {
         <Btn s t="Duplicate" on={() => { onClose(); duplicate(b); }} />
       </Row>
       {b.type === 'invoice' && i.bal > 0.005 && <Row><Btn t="+ Payment" on={() => setPay(true)} />{!!b.cph && <Btn s t="🔔 Reminder" on={() => remind(b.cust, b.cph, b.no, i.bal)} />}</Row>}
-      {b.type === 'quote' && <Row><Btn t="Invoice me badlein" on={() => { onClose(); convert(b); }} /></Row>}
-      <Row><Btn danger t="Delete" on={() => Alert.alert('Delete karein?', b.no + ' hamesha ke liye hat jayega.', [{ text: 'Nahi', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { deleteBill(b.id); onClose(); } }])} /></Row>
+      {b.type === 'quote' && <Row><Btn t="Convert to invoice" on={() => { onClose(); convert(b); }} /></Row>}
+      <Row><Btn danger t="Delete" on={() => Alert.alert('Delete?', b.no + ' will be deleted permanently.', [{ text: 'No', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { deleteBill(b.id); onClose(); } }])} /></Row>
     </Sheet>
   );
 }
@@ -950,9 +977,9 @@ function Customers() {
   const [q, setQ] = useState(''), [f, setF] = useState(null);
   const bal = (cu) => bills.filter((b) => b.cid === cu.id).reduce((s, b) => s + info(b).bal, 0);
   const save = () => {
-    if (!f.name.trim()) { flash('Naam zaroori hai'); return; }
+    if (!f.name.trim()) { flash('Name is required'); return; }
     setCusts((l) => (l.some((x) => x.id === f.id) ? l.map((x) => (x.id === f.id ? f : x)) : [f, ...l]));
-    setF(null); flash('Customer save ho gaya ✓');
+    setF(null); flash('Customer saved ✓');
   };
   const list = custs.filter((x) => (x.name + x.phone).toLowerCase().includes(q.toLowerCase())).sort((a, z) => a.name.localeCompare(z.name));
   const ex = f && custs.some((x) => x.id === f.id);
@@ -963,13 +990,13 @@ function Customers() {
         <Btn t="+ Add" on={() => setF({ id: uid(), name: '', phone: '', addr: '', gstin: '' })} style={{ flex: 0, minWidth: 80, padding: 10 }} />
       </Row>
       <View style={{ backgroundColor: C.paper, borderRadius: 12, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12 }}>
-        {!list.length ? <Empty t="Abhi koi customer nahi." /> : list.map((cu) => {
+        {!list.length ? <Empty t="No customers yet." /> : list.map((cu) => {
           const bb = bal(cu);
           return (
             <TouchableOpacity key={cu.id} onPress={() => setF(cu)} style={{ paddingVertical: 11, borderBottomWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: C.g, alignItems: 'center', justifyContent: 'center', marginRight: 10 }}><Text style={{ color: C.btnt, fontWeight: '700' }}>{cu.name[0].toUpperCase()}</Text></View>
               <View style={{ flex: 1 }}><Text style={{ color: C.ink, fontWeight: '600' }}>{cu.name}</Text><Text style={{ color: C.mute, fontSize: 12 }}>{cu.phone}</Text></View>
-              {bb > 0.005 && <Text style={{ color: C.red, fontWeight: '700' }}>{money(bb)} baaki</Text>}
+              {bb > 0.005 && <Text style={{ color: C.red, fontWeight: '700' }}>{money(bb)} due</Text>}
             </TouchableOpacity>
           );
         })}
@@ -982,8 +1009,8 @@ function Customers() {
             <Row><Field label="Phone" keyboardType="phone-pad" value={f.phone} onChangeText={(v) => setF({ ...f, phone: v })} /></Row>
             <Row><Field label="Address" value={f.addr} onChangeText={(v) => setF({ ...f, addr: v })} /></Row>
             {gstOn && <Row><Field label="GSTIN (optional)" autoCapitalize="characters" maxLength={15} value={f.gstin} onChangeText={(v) => setF({ ...f, gstin: v.toUpperCase() })} /></Row>}
-            {ex && bal(f) > 0.005 && !!f.phone && <Row><Btn s t={'🔔 ' + money(bal(f)) + ' ka reminder'} on={() => remind(f.name, f.phone, '', bal(f))} /></Row>}
-            {ex && <Row><Btn danger t="Delete customer" on={() => Alert.alert('Delete karein?', 'Purane bills nahi hatenge.', [{ text: 'Nahi', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { setCusts((l) => l.filter((x) => x.id !== f.id)); setF(null); } }])} /></Row>}
+            {ex && bal(f) > 0.005 && !!f.phone && <Row><Btn s t={'🔔 ' + money(bal(f)) + ' reminder'} on={() => remind(f.name, f.phone, '', bal(f))} /></Row>}
+            {ex && <Row><Btn danger t="Delete customer" on={() => Alert.alert('Delete?', 'Existing bills will not be deleted.', [{ text: 'No', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { setCusts((l) => l.filter((x) => x.id !== f.id)); setF(null); } }])} /></Row>}
           </View>
         )}
       </Sheet>
@@ -995,9 +1022,9 @@ function Items() {
   const { C, cfg, prods, setProds, gstOn, flash } = useX();
   const [q, setQ] = useState(''), [f, setF] = useState(null);
   const save = () => {
-    if (!f.name.trim()) { flash('Item ka naam zaroori hai'); return; }
+    if (!f.name.trim()) { flash('Item name is required'); return; }
     setProds((l) => (l.some((x) => x.id === f.id) ? l.map((x) => (x.id === f.id ? f : x)) : [f, ...l]));
-    setF(null); flash('Item save ho gaya ✓');
+    setF(null); flash('Item saved ✓');
   };
   const list = prods.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())).sort((a, z) => a.name.localeCompare(z.name));
   const ex = f && prods.some((x) => x.id === f.id);
@@ -1008,7 +1035,7 @@ function Items() {
         <Btn t="+ Add" on={() => setF({ id: uid(), name: '', rate: '', unit: '', hsn: '', gst: String(cfg.defGst || '0'), track: false, stock: '', low: '5' })} style={{ flex: 0, minWidth: 80, padding: 10 }} />
       </Row>
       <View style={{ backgroundColor: C.paper, borderRadius: 12, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12 }}>
-        {!list.length ? <Empty t="Abhi koi item nahi. Items save karein, bill me ek tap me add honge." /> : list.map((p) => {
+        {!list.length ? <Empty t="No items yet. Save items to add them to a bill in one tap." /> : list.map((p) => {
           const low = p.track && (+p.stock || 0) <= (+p.low || 0);
           return (
             <TouchableOpacity key={p.id} onPress={() => setF(p)} style={{ paddingVertical: 11, borderBottomWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center' }}>
@@ -1037,7 +1064,7 @@ function Items() {
               </Row>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <View style={{ flex: 1 }}><Text style={{ color: C.ink, fontWeight: '600' }}>Stock track karein</Text><Text style={{ color: C.mute, fontSize: 12 }}>Invoice banane par stock apne aap ghatega.</Text></View>
+              <View style={{ flex: 1 }}><Text style={{ color: C.ink, fontWeight: '600' }}>Track stock</Text><Text style={{ color: C.mute, fontSize: 12 }}>Stock reduces automatically when you create an invoice.</Text></View>
               <Switch value={!!f.track} onValueChange={(v) => setF({ ...f, track: v })} trackColor={{ true: C.btn }} />
             </View>
             {!!f.track && (
@@ -1059,7 +1086,7 @@ function Reports() {
   const list = bills.filter((b) => b.type !== 'quote' && (!from || b.dt >= from) && (!to || b.dt <= to)).sort((a, z) => (a.dt < z.dt ? -1 : a.dt > z.dt ? 1 : 0));
   const sg = (b) => (b.type === 'cn' ? -1 : 1);
   const tot = list.reduce((a, b) => { const i = info(b), s = sg(b); return { n: a.n + 1, tx: a.tx + s * i.c.taxable, tax: a.tax + s * i.c.tax, t: a.t + s * i.total, paid: a.paid + (b.type === 'invoice' ? i.paid : 0), bal: a.bal + i.bal }; }, { n: 0, tx: 0, tax: 0, t: 0, paid: 0, bal: 0 });
-  const share = async (rows, name) => { try { await Share.share({ title: name, message: rows.map((r) => r.map(csvQ).join(',')).join('\r\n') }); setMsg('Report share ho gayi ✓'); } catch (e) { setMsg('Share nahi hua.'); } };
+  const share = async (rows, name) => { try { await Share.share({ title: name, message: rows.map((r) => r.map(csvQ).join(',')).join('\r\n') }); setMsg('Report shared ✓'); } catch (e) { setMsg('Could not share.'); } };
   const sales = () => {
     const rows = [['Doc No', 'Type', 'Date', 'Customer', 'Phone', 'Subtotal', 'Discount', 'Total', 'Paid', 'Balance', 'Status']];
     list.forEach((b) => { const i = info(b), s = sg(b); rows.push([b.no, TYPE_NAME[b.type], b.dt, b.cust, b.cph, r2(s * i.c.sub), r2(s * i.c.disc), r2(s * i.total), r2(i.paid), r2(i.bal), i.status]); });
@@ -1067,7 +1094,7 @@ function Reports() {
   };
   const gst = () => {
     const l = list.filter((b) => b.gst);
-    if (!l.length) { setMsg('Is range me koi GST bill nahi.'); return; }
+    if (!l.length) { setMsg('No GST bills in this range.'); return; }
     const rows = [['Doc No', 'Type', 'Date', 'Customer', 'Customer GSTIN', 'B2B/B2C', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax', 'Round Off', 'Invoice Total']];
     const T = [0, 0, 0, 0, 0, 0, 0];
     l.forEach((b) => {
@@ -1084,7 +1111,7 @@ function Reports() {
         <Row><DateField label="From" value={from} onChange={setFrom} clearable /><DateField label="To" value={to} onChange={setTo} clearable /></Row>
         <Text style={{ color: C.ink }}>{tot.n} bill(s) · Sale {money(tot.t)}</Text>
         {gstOn && <Text style={{ color: C.ink }}>Taxable {money(tot.tx)} · GST {money(tot.tax)}</Text>}
-        <Text style={{ color: C.mute }}>Mile {money(tot.paid)} · Baaki {money(tot.bal)}</Text>
+        <Text style={{ color: C.mute }}>Received {money(tot.paid)} · Balance {money(tot.bal)}</Text>
       </Card>
       <Row><Btn t="Sales report (CSV)" on={sales} /></Row>
       {gstOn && <Row><Btn t="GST report (CSV)" on={gst} /></Row>}
@@ -1173,7 +1200,7 @@ function More() {
     const h = BackHandler.addEventListener('hardwareBackPress', () => { setSub(null); return true; });
     return () => h.remove();
   }, [sub]);
-  const items = [['profile', '🏪', 'Shop profile & GST', 'Business details, GST on/off, bank, terms'], ['reports', '📊', 'Reports', 'Sales aur GST report (CSV)'], ['backup', '💾', 'Backup / Restore', 'Data safe rakhein'], ['security', '🔒', 'App lock', 'PIN se app surakshit karein'], ['terms', '📜', 'Terms & Conditions', 'How the app works and your responsibilities']];
+  const items = [['profile', '🏪', 'Shop profile & GST', 'Business details, GST on/off, bank, terms'], ['reports', '📊', 'Reports', 'Sales and GST reports (CSV)'], ['backup', '💾', 'Backup / Restore', 'Keep your data safe'], ['security', '🔒', 'App lock', 'Protect the app with a PIN'], ['terms', '📜', 'Terms & Conditions', 'How the app works and your responsibilities']];
   if (sub) {
     const names = { profile: 'Shop profile & GST', reports: 'Reports', backup: 'Backup / Restore', security: 'App lock', terms: 'Terms & Conditions' };
     return (
@@ -1358,14 +1385,14 @@ function Main() {
     const old = bills.find((x) => x.id === id);
     if (old) setProds((p) => stockApply(p, old, -1));
     setBills((l) => l.filter((x) => x.id !== id));
-    flash('Delete ho gaya');
+    flash('Deleted');
   };
   const sharePdf = async (b) => {
     try {
       const { uri } = await Print.printToFileAsync({ html: billHtml(b, cfg), width: 595, height: 842 });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: b.no });
-      else flash('Is device par sharing available nahi.');
-    } catch (e) { flash('PDF nahi ban payi.'); }
+      else flash('Sharing is not available on this device.');
+    } catch (e) { flash('Could not create the PDF.'); }
   };
   const shareImage = async (b) => {
     try {
@@ -1373,8 +1400,8 @@ function Main() {
       await new Promise((r) => setTimeout(r, 600));
       const uri = await captureRef(snapRef, { format: 'png', quality: 1 });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: b.no });
-      else flash('Is device par sharing available nahi.');
-    } catch (e) { flash('Photo nahi ban payi.'); }
+      else flash('Sharing is not available on this device.');
+    } catch (e) { flash('Could not create the photo.'); }
     setSnapB(null);
   };
   const remind = (name, phone, no, bal) => {
