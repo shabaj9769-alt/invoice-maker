@@ -1247,9 +1247,9 @@ function TermsGate({ onAccept }) {
         <Text style={{ color: C.ink, fontSize: 22, fontWeight: '700' }}>Terms & Conditions</Text>
         <Text style={{ color: C.mute, fontSize: 12, marginTop: 2 }}>Please read these terms. You need to accept them to use the app.</Text>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 14 }}><TermsBody /></ScrollView>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 14 }}><TermsBody /></ScrollView>
       <View style={{ padding: 14, paddingBottom: 14 + ins.bottom, borderTopWidth: 1, borderColor: C.line, backgroundColor: C.paper }}>
-        <Btn t="I Agree" on={onAccept} />
+        <Btn t="I Agree" on={onAccept} style={{ flex: 0, flexGrow: 0, flexBasis: 'auto', alignSelf: 'stretch', minHeight: 48, justifyContent: 'center', paddingVertical: 14 }} />
       </View>
     </View>
   );

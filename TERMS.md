@@ -1,6 +1,6 @@
-# Invoice Maker: Terms and Conditions
+# Invoice Maker: Terms and Conditions and Privacy Policy
 
-_Last updated: October 19, 2026_
+_Last updated: October 21, 2026_
 
 ## 1. About this app
 
@@ -94,10 +94,32 @@ Where liability cannot be excluded, our total liability is limited to the amount
 
 You may stop using the App at any time by uninstalling it, which removes the data stored in it. We may suspend or end your access if you breach these Terms. Sections that by their nature should continue (such as the disclaimers, the limit of liability and the governing law) remain in effect after you stop using the App.
 
-## 17. Governing law and disputes
+## 17. Privacy policy
 
-These Terms are governed by the laws of India. Subject to applicable law, the courts at [your city, state], India have exclusive jurisdiction over any dispute arising from these Terms or the App.
+Invoice Maker does not require an account or sign-up. The developer does not collect, store, sell or share your personal data, your customers' data or your bills. Everything you enter (business details, customers, items, bills, payments, bank and UPI details and your PIN) is stored only on your device.
 
-## 18. Contact
+The App contains no ads, no analytics and no tracking. It does not send your data to any server run by the developer.
 
-For questions about these Terms, contact us at [your contact email].
+Data leaves your device only when you choose to share, print or back up a bill, for example through WhatsApp, email, cloud storage or a printer. Those services have their own privacy policies.
+
+The App may ask for access to your camera or photos only for features you use (for example adding a logo or a UPI QR image), and only on your device. Uninstalling the App deletes all data stored in it. If you made a backup file, you are responsible for keeping it safe or deleting it.
+
+The App is meant for businesses and adults and is not directed at children under 18.
+
+If we change this policy, we will update it here and in the App, and you will be asked to accept the new version.
+
+## 18. Developer and Grievance Officer
+
+Developer and Grievance Officer: Shabaj Khan, Palghar, Maharashtra, India.
+
+Email: shabaj9769@gmail.com
+
+For any complaint, privacy question or request about the App, write to this email. We will acknowledge your message within 48 hours and aim to resolve it within 15 days.
+
+## 19. Governing law and disputes
+
+These Terms are governed by the laws of India. Subject to applicable law, the courts at Palghar, Maharashtra, India have exclusive jurisdiction over any dispute arising from these Terms or the App.
+
+## 20. Contact
+
+For questions about these Terms or the App, contact us at shabaj9769@gmail.com.

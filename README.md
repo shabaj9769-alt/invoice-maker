@@ -23,4 +23,4 @@ npx expo start
 ## Legal
 
 See [TERMS.md](./TERMS.md). The same text is shown in the app (More > Terms & Conditions) and must be accepted on first launch.
-Edit `terms.js`, fill in the two `[bracketed]` placeholders, bump `TERMS_VERSION` when the text changes, and regenerate `TERMS.md`.
+Edit `terms.js`, bump `TERMS_VERSION` when the text changes, and regenerate `TERMS.md`. The Terms include the Privacy Policy and the Developer / Grievance Officer contact (shabaj9769@gmail.com).

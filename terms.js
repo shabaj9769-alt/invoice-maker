@@ -1,9 +1,8 @@
 // Terms & Conditions for Invoice Maker.
 // Bump TERMS_VERSION whenever the text changes: the app will ask every user to accept the new version.
-// Before publishing: fill in the two [bracketed] placeholders in sections 17 and 18.
 
-export const TERMS_VERSION = '2026-10-19';
-export const TERMS_UPDATED = 'October 19, 2026';
+export const TERMS_VERSION = '2026-10-21';
+export const TERMS_UPDATED = 'October 21, 2026';
 
 export const TERMS = [
   {
@@ -117,15 +116,34 @@ export const TERMS = [
     ],
   },
   {
+    h: 'Privacy policy',
+    p: [
+      'Invoice Maker does not require an account or sign-up. The developer does not collect, store, sell or share your personal data, your customers\' data or your bills. Everything you enter (business details, customers, items, bills, payments, bank and UPI details and your PIN) is stored only on your device.',
+      'The App contains no ads, no analytics and no tracking. It does not send your data to any server run by the developer.',
+      'Data leaves your device only when you choose to share, print or back up a bill, for example through WhatsApp, email, cloud storage or a printer. Those services have their own privacy policies.',
+      'The App may ask for access to your camera or photos only for features you use (for example adding a logo or a UPI QR image), and only on your device. Uninstalling the App deletes all data stored in it. If you made a backup file, you are responsible for keeping it safe or deleting it.',
+      'The App is meant for businesses and adults and is not directed at children under 18.',
+      'If we change this policy, we will update it here and in the App, and you will be asked to accept the new version.',
+    ],
+  },
+  {
+    h: 'Developer and Grievance Officer',
+    p: [
+      'Developer and Grievance Officer: Shabaj Khan, Palghar, Maharashtra, India.',
+      'Email: shabaj9769@gmail.com',
+      'For any complaint, privacy question or request about the App, write to this email. We will acknowledge your message within 48 hours and aim to resolve it within 15 days.',
+    ],
+  },
+  {
     h: 'Governing law and disputes',
     p: [
-      'These Terms are governed by the laws of India. Subject to applicable law, the courts at [your city, state], India have exclusive jurisdiction over any dispute arising from these Terms or the App.',
+      'These Terms are governed by the laws of India. Subject to applicable law, the courts at Palghar, Maharashtra, India have exclusive jurisdiction over any dispute arising from these Terms or the App.',
     ],
   },
   {
     h: 'Contact',
     p: [
-      'For questions about these Terms, contact us at [your contact email].',
+      'For questions about these Terms or the App, contact us at shabaj9769@gmail.com.',
     ],
   },
 ];
