@@ -1,8 +1,8 @@
 // Terms & Conditions for Invoice Maker.
 // Bump TERMS_VERSION whenever the text changes: the app will ask every user to accept the new version.
 
-export const TERMS_VERSION = '2026-10-21';
-export const TERMS_UPDATED = 'October 21, 2026';
+export const TERMS_VERSION = '2026-10-22';
+export const TERMS_UPDATED = 'October 22, 2026';
 
 export const TERMS = [
   {
@@ -121,7 +121,7 @@ export const TERMS = [
       'Invoice Maker does not require an account or sign-up. The developer does not collect, store, sell or share your personal data, your customers\' data or your bills. Everything you enter (business details, customers, items, bills, payments, bank and UPI details and your PIN) is stored only on your device.',
       'The App contains no ads, no analytics and no tracking. It does not send your data to any server run by the developer.',
       'Data leaves your device only when you choose to share, print or back up a bill, for example through WhatsApp, email, cloud storage or a printer. Those services have their own privacy policies.',
-      'The App may ask for access to your camera or photos only for features you use (for example adding a logo or a UPI QR image), and only on your device. Uninstalling the App deletes all data stored in it. If you made a backup file, you are responsible for keeping it safe or deleting it.',
+      'The App asks for access to your contacts only if you tap "Contacts" on the Customers screen, so you can pick people to add as customers. Contacts you select are saved only inside the App on your device. We do not upload, store or share your contacts, and you can deny or withdraw this permission at any time in your phone settings. The App may also ask for access to your camera or photos only for features you use (for example adding a logo or a UPI QR image), and only on your device. Uninstalling the App deletes all data stored in it. If you made a backup file, you are responsible for keeping it safe or deleting it.',
       'The App is meant for businesses and adults and is not directed at children under 18.',
       'If we change this policy, we will update it here and in the App, and you will be asked to accept the new version.',
     ],
