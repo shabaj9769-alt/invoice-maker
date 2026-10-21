@@ -9,6 +9,7 @@ import * as Sharing from 'expo-sharing';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
+import * as Contacts from 'expo-contacts';
 import { TERMS, TERMS_VERSION, TERMS_UPDATED } from './terms';
 import qrcode from 'qrcode-generator';
 import QRCode from 'react-native-qrcode-svg';
@@ -381,11 +382,11 @@ function Sheet({ visible, onClose, title, children, footer }) {
   const [kbH, setKbH] = useState(0);
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
-    const a = Keyboard.addListener('keyboardDidShow', (e) => setKbH((e && e.endCoordinates && e.endCoordinates.height) || 0));
+    const a = Keyboard.addListener('keyboardDidShow', (e) => setKbH(e && e.endCoordinates ? Math.max(e.endCoordinates.height || 0, Dimensions.get('screen').height - (e.endCoordinates.screenY || Dimensions.get('screen').height)) : 0));
     const b = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
     return () => { a.remove(); b.remove(); };
   }, []);
-  const winH = Dimensions.get('window').height;
+  const winH = Math.max(Dimensions.get('window').height, Dimensions.get('screen').height);
   const maxH = kbH ? Math.max(220, winH - kbH - ins.top - 24) : winH * 0.88;
   const bottomInset = kbH ? 0 : ins.bottom;
   return (
@@ -976,10 +977,42 @@ function Customers() {
   const { C, custs, bills, setCusts, gstOn, openEditor, remind, flash } = useX();
   const [q, setQ] = useState(''), [f, setF] = useState(null);
   const bal = (cu) => bills.filter((b) => b.cid === cu.id).reduce((s, b) => s + info(b).bal, 0);
-  const save = () => {
+  const [imp, setImp] = useState(null), [selC, setSelC] = useState([]), [qc, setQc] = useState('');
+  const blank = () => ({ id: uid(), name: '', phone: '', addr: '', gstin: '' });
+  const save = (next) => {
     if (!f.name.trim()) { flash('Name is required'); return; }
-    setCusts((l) => (l.some((x) => x.id === f.id) ? l.map((x) => (x.id === f.id ? f : x)) : [f, ...l]));
-    setF(null); flash('Customer saved ✓');
+    const cu = { ...f, name: f.name.trim() };
+    setCusts((l) => (l.some((x) => x.id === cu.id) ? l.map((x) => (x.id === cu.id ? cu : x)) : [cu, ...l]));
+    if (next === true) { setF(blank()); flash('Customer saved ✓ Add the next one'); } else { setF(null); flash('Customer saved ✓'); }
+  };
+  const tail = (p) => String(p || '').replace(/\D/g, '').slice(-10);
+  const openImport = async () => {
+    try {
+      const perm = await Contacts.requestPermissionsAsync();
+      if (perm.status !== 'granted') { flash('Contacts permission was not given'); return; }
+      const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.PhoneNumbers] });
+      const have = new Set(custs.map((x) => tail(x.phone)).filter(Boolean));
+      const out = [];
+      (data || []).forEach((ct) => {
+        const nm = (ct.name || '').trim();
+        const ph = ct.phoneNumbers && ct.phoneNumbers[0] && (ct.phoneNumbers[0].number || '');
+        if (!nm || !ph) return;
+        const phone = String(ph).replace(/[^\d+]/g, '').slice(0, 20);
+        if (!phone || have.has(tail(phone))) return;
+        out.push({ id: ct.id || uid(), name: nm.slice(0, 100), phone });
+      });
+      out.sort((x, y) => x.name.localeCompare(y.name));
+      if (!out.length) { flash('No new contacts to import'); return; }
+      setSelC([]); setQc(''); setImp(out);
+    } catch (e) { flash('Could not read contacts'); }
+  };
+  const togC = (id) => setSelC((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]));
+  const doImport = () => {
+    const chosen = (imp || []).filter((x) => selC.includes(x.id));
+    if (!chosen.length) return;
+    setCusts((l) => [...chosen.map((x) => ({ id: uid(), name: x.name, phone: x.phone, addr: '', gstin: '' })), ...l]);
+    setImp(null); setSelC([]);
+    flash(chosen.length + (chosen.length === 1 ? ' customer' : ' customers') + ' added ✓');
   };
   const list = custs.filter((x) => (x.name + x.phone).toLowerCase().includes(q.toLowerCase())).sort((a, z) => a.name.localeCompare(z.name));
   const ex = f && custs.some((x) => x.id === f.id);
@@ -987,7 +1020,8 @@ function Customers() {
     <View>
       <Row style={{ alignItems: 'flex-end' }}>
         <Field value={q} onChangeText={setQ} placeholder="Search customer" />
-        <Btn t="+ Add" on={() => setF({ id: uid(), name: '', phone: '', addr: '', gstin: '' })} style={{ flex: 0, minWidth: 80, padding: 10 }} />
+        <Btn s t="📇 Contacts" on={openImport} style={{ flex: 0, minWidth: 100, padding: 10 }} />
+        <Btn t="+ Add" on={() => setF(blank())} style={{ flex: 0, minWidth: 80, padding: 10 }} />
       </Row>
       <View style={{ backgroundColor: C.paper, borderRadius: 12, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12 }}>
         {!list.length ? <Empty t="No customers yet." /> : list.map((cu) => {
@@ -1002,7 +1036,7 @@ function Customers() {
         })}
       </View>
       <Sheet visible={!!f} onClose={() => setF(null)} title={ex ? 'Customer' : 'New customer'}
-        footer={<View><Row style={{ marginBottom: 0 }}><Btn t="Save" on={save} />{ex && <Btn s t="+ New bill" on={() => { const c = f; setF(null); openEditor('invoice', c); }} />}</Row></View>}>
+        footer={<View><Row style={{ marginBottom: 0 }}>{!ex && <Btn s t="Save & add next" on={() => save(true)} />}<Btn t="Save" on={() => save()} />{ex && <Btn s t="+ New bill" on={() => { const c = f; setF(null); openEditor('invoice', c); }} />}</Row></View>}>
         {!!f && (
           <View>
             <Row><Field label="Name *" value={f.name} onChangeText={(v) => setF({ ...f, name: v })} /></Row>
@@ -1014,6 +1048,21 @@ function Customers() {
           </View>
         )}
       </Sheet>
+      <Sheet visible={!!imp} onClose={() => { setImp(null); setSelC([]); }} title="Add from contacts"
+        footer={<Btn t={selC.length ? 'Add ' + selC.length + (selC.length === 1 ? ' customer' : ' customers') : 'Tap contacts to select'} on={doImport} />}>
+        <Search value={qc} onChange={setQc} ph="Name or phone" />
+        {(imp || []).filter((x) => (x.name + x.phone).toLowerCase().includes(qc.toLowerCase())).map((x) => {
+          const on = selC.includes(x.id);
+          return (
+            <TouchableOpacity key={x.id} onPress={() => togC(x.id)} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: on ? C.bg : C.paper, borderRadius: 8, padding: 12, marginBottom: 6, borderWidth: on ? 2 : 1, borderColor: on ? C.g : C.line }}>
+              <View style={{ width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: on ? C.g : C.mute, backgroundColor: on ? C.g : 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                {on && <Text style={{ color: C.btnt, fontWeight: '700', fontSize: 14 }}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}><Text style={{ color: C.ink, fontWeight: '600' }}>{x.name}</Text><Text style={{ color: C.mute, fontSize: 12 }}>{x.phone}</Text></View>
+            </TouchableOpacity>
+          );
+        })}
+      </Sheet>
     </View>
   );
 }
@@ -1021,10 +1070,12 @@ function Customers() {
 function Items() {
   const { C, cfg, prods, setProds, gstOn, flash } = useX();
   const [q, setQ] = useState(''), [f, setF] = useState(null);
-  const save = () => {
+  const blank = (prev) => ({ id: uid(), name: '', rate: '', unit: prev ? prev.unit || '' : '', hsn: '', gst: prev ? String(prev.gst) : String(cfg.defGst || '0'), track: false, stock: '', low: '5' });
+  const save = (next) => {
     if (!f.name.trim()) { flash('Item name is required'); return; }
-    setProds((l) => (l.some((x) => x.id === f.id) ? l.map((x) => (x.id === f.id ? f : x)) : [f, ...l]));
-    setF(null); flash('Item saved ✓');
+    const item = { ...f, name: f.name.trim() };
+    setProds((l) => (l.some((x) => x.id === item.id) ? l.map((x) => (x.id === item.id ? item : x)) : [item, ...l]));
+    if (next === true) { setF(blank(item)); flash('Item saved ✓ Add the next one'); } else { setF(null); flash('Item saved ✓'); }
   };
   const list = prods.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())).sort((a, z) => a.name.localeCompare(z.name));
   const ex = f && prods.some((x) => x.id === f.id);
@@ -1049,7 +1100,7 @@ function Items() {
         })}
       </View>
       <Sheet visible={!!f} onClose={() => setF(null)} title={ex ? 'Edit item' : 'New item'}
-        footer={<Row style={{ marginBottom: 0 }}><Btn t="Save" on={save} />{ex && <Btn danger t="Delete" on={() => { setProds((l) => l.filter((x) => x.id !== f.id)); setF(null); }} />}</Row>}>
+        footer={<Row style={{ marginBottom: 0 }}>{!ex && <Btn s t="Save & add next" on={() => save(true)} />}<Btn t="Save" on={() => save()} />{ex && <Btn danger t="Delete" on={() => { setProds((l) => l.filter((x) => x.id !== f.id)); setF(null); }} />}</Row>}>
         {!!f && (
           <View>
             <Row><Field label="Item name *" value={f.name} onChangeText={(v) => setF({ ...f, name: v })} /></Row>
