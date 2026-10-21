@@ -338,8 +338,8 @@ function Btn({ t, on, s, danger, style }) {
   const col = danger ? C.red : C.g;
   return (
     <TouchableOpacity onPress={on} activeOpacity={0.8}
-      style={[{ flex: 1, minWidth: 100, padding: 12, borderRadius: 8, alignItems: 'center', backgroundColor: s || danger ? 'transparent' : C.btn, borderWidth: s || danger ? 1 : 0, borderColor: col }, style]}>
-      <Text style={{ fontWeight: '600', color: s || danger ? (danger ? C.red : C.ink) : C.btnt }}>{t}</Text>
+      style={[{ flex: 1, minWidth: 100, minHeight: 46, padding: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: s || danger ? 'transparent' : C.btn, borderWidth: s || danger ? 1 : 0, borderColor: col }, style]}>
+      <Text style={{ fontWeight: '600', fontSize: 15, textAlign: 'center', color: s || danger ? (danger ? C.red : C.ink) : C.btnt }}>{t}</Text>
     </TouchableOpacity>
   );
 }
@@ -996,9 +996,9 @@ function Customers() {
       (data || []).forEach((ct) => {
         const nm = (ct.name || '').trim();
         const ph = ct.phoneNumbers && ct.phoneNumbers[0] && (ct.phoneNumbers[0].number || '');
-        if (!nm || !ph) return;
+        if (!nm || !ph || !/[A-Za-z\u0900-\u097F]/.test(nm)) return;
         const phone = String(ph).replace(/[^\d+]/g, '').slice(0, 20);
-        if (!phone || have.has(tail(phone))) return;
+        if (phone.replace(/\D/g, '').length < 8 || have.has(tail(phone))) return;
         out.push({ id: ct.id || uid(), name: nm.slice(0, 100), phone });
       });
       out.sort((x, y) => x.name.localeCompare(y.name));
