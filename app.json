@@ -2,7 +2,7 @@
   "expo": {
     "name": "Invoice Maker",
     "slug": "invoice-maker",
-    "version": "1.0.4",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -23,7 +23,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.shabaj000.invoicemaker",
-      "versionCode": 5,
+      "versionCode": 7,
       "allowBackup": false
     },
     "web": {
